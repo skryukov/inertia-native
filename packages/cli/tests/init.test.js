@@ -509,18 +509,6 @@ describe('package.json scripts', () => {
     expect(stdout).toContain('✓ Added "android" script to package.json')
   })
 
-  it.each([
-    ['4 spaces', '{\n    "name": "x",\n    "scripts": {\n        "dev": "vite"\n    }\n}\n'],
-    ['tabs', '{\n\t"name": "x"\n}'],
-    ['CRLF', '{\r\n  "name": "x"\r\n}\r\n'],
-  ])('keeps the package.json style (%s)', async (_, text) => {
-    const dir = project('acme-shop', { 'package.json': text })
-    await cli(['init', 'ios', '--skip-install'], dir)
-    const after = read(dir, 'package.json')
-    const indent = text.match(/^([ \t]+)"/m)[1]
-    const eol = text.includes('\r\n') ? '\r\n' : '\n'
-    expect(after).toBe(JSON.stringify({ ...JSON.parse(text), scripts: { ...JSON.parse(text).scripts, ios: 'inertia-native run ios' } }, null, indent).replaceAll('\n', eol) + (text.endsWith('\n') ? eol : ''))
-  })
 })
 
 describe('existing shells', () => {

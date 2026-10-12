@@ -78,24 +78,13 @@ export function runCommand(pm, script) {
   return [command, ...args].join(' ')
 }
 
-/**
- * package.json plus what's needed to write it back in the same style.
- * @param {string} root
- */
+/** @param {string} root */
 export function readPackageJson(root) {
   const path = join(root, 'package.json')
-  const text = readFileSync(path, 'utf8')
-  return {
-    path,
-    data: /** @type {Record<string, any>} */ (JSON.parse(text)),
-    indent: text.match(/^([ \t]+)"/m)?.[1] ?? '  ',
-    eol: text.includes('\r\n') ? '\r\n' : '\n',
-    finalNewline: text.endsWith('\n'),
-  }
+  return { path, data: /** @type {Record<string, any>} */ (JSON.parse(readFileSync(path, 'utf8'))) }
 }
 
 /** @param {ReturnType<typeof readPackageJson>} pkg */
-export function writePackageJson({ path, data, indent, eol, finalNewline }) {
-  const text = JSON.stringify(data, null, indent).replaceAll('\n', eol)
-  writeFileSync(path, finalNewline ? text + eol : text)
+export function writePackageJson({ path, data }) {
+  writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`)
 }
