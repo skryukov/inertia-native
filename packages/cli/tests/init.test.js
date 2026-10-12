@@ -72,10 +72,6 @@ function fakePrompter(answers = {}) {
       asked.push({ label, choices, fallback })
       return answers[label] ?? fallback
     },
-    async confirm(label, fallback = true) {
-      asked.push({ label, confirm: true })
-      return answers[label] ?? fallback
-    },
     close() {},
   }
 }
@@ -147,7 +143,7 @@ describe('init on a Laravel-like app', () => {
     expect(stdout).toContain('✓ resources/js/app.tsx already sets up inertia-native')
     expect(stdout).toContain('✓ package.json already has the scripts')
     expect(stdout).not.toContain('App name')
-    expect(stderr).toContain('! Skipped ios/: it already exists (--force replaces it)')
+    expect(stderr).toContain('! Skipped ios/: it already exists (delete it to create it again)')
     expect(stderr).toContain('! Skipped android/: it already exists')
   })
 })
@@ -547,45 +543,14 @@ describe('existing shells', () => {
     const dir = project('acme-shop', { 'ios/mine.txt': 'keep me' })
     const { code, stdout, stderr } = await cli(['init'], dir)
     expect(code).toBe(0)
-    expect(stderr).toContain('! Skipped ios/: it already exists (--force replaces it)')
+    expect(stderr).toContain('! Skipped ios/: it already exists (delete it to create it again)')
     expect(stdout).toContain('✓ Created android/\n')
     expect(listing(join(dir, 'ios'))).toEqual(['mine.txt'])
     expect(existsSync(join(dir, 'android', 'gradlew'))).toBe(true)
   })
 
-  it('replaces existing platforms with --force', async () => {
-    const dir = project()
-    await cli(['init', 'ios', '--name', 'Old'], dir)
-    writeFileSync(join(dir, 'ios', 'mine.txt'), 'stale')
-    const { code, stdout } = await cli(['init', 'ios', '--force'], dir)
-    expect(code).toBe(0)
-    expect(stdout).toContain('✓ Created ios/ (replaced)')
-    expect(existsSync(join(dir, 'ios', 'mine.txt'))).toBe(false)
-    expect(read(dir, 'ios/App.xcodeproj/project.pbxproj')).toContain('Acme Shop')
-  })
 
-  it('asks before replacing in a terminal, defaulting to no', async () => {
-    const dir = project('acme-shop', { 'ios/mine.txt': 'keep me', 'android/mine.txt': 'keep me' })
-    const prompter = fakePrompter()
-    const { code, stderr } = await cli(['init', '--force'], dir, { prompter })
-    expect(code).toBe(0)
-    expect(prompter.asked.map((q) => q.label)).toEqual(['Platforms', 'Replace ios/ and android/? Everything in them is deleted.'])
-    expect(stderr).toContain('! Skipped ios/: it already exists\n')
-    expect(listing(join(dir, 'ios'))).toEqual(['mine.txt'])
-    expect(listing(join(dir, 'android'))).toEqual(['mine.txt'])
-  })
 
-  it('replaces on yes in a terminal, and without asking with --yes', async () => {
-    const question = 'Replace ios/? Everything in it is deleted.'
-    const dir = project('acme-shop', { 'ios/mine.txt': 'stale' })
-    await cli(['init', 'ios', '--force'], dir, { prompter: fakePrompter({ [question]: true }) })
-    expect(existsSync(join(dir, 'ios', 'mine.txt'))).toBe(false)
-    writeFileSync(join(dir, 'ios', 'mine.txt'), 'stale')
-    const prompter = fakePrompter()
-    await cli(['init', 'ios', '--force', '--yes'], dir, { prompter })
-    expect(prompter.asked).toEqual([])
-    expect(existsSync(join(dir, 'ios', 'mine.txt'))).toBe(false)
-  })
 })
 
 describe.each([

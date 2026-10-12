@@ -66,9 +66,6 @@ function fakePrompter(answer = (choices, fallback) => fallback) {
     async text() {
       throw new Error('unexpected text prompt')
     },
-    async confirm() {
-      throw new Error('unexpected confirm prompt')
-    },
     close() {},
   }
 }

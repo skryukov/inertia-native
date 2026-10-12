@@ -1,7 +1,7 @@
 // `inertia-native init [ios|android|both]`: adds inertia-native to an Inertia
 // app: npm packages, entrypoint patch, native shells, package.json scripts.
 // Every step is idempotent.
-import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, relative, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 
@@ -36,8 +36,6 @@ Options:
   --entrypoint <path>  File that calls createInertiaApp(). Default: searched for
                        under ${SEARCH_DIRS.join(', ')}
   --skip-install       Don't add the npm packages
-  --force              Replace existing ios/ and android/, after asking in a
-                       terminal (default: skip them)
   -y, --yes            Don't ask; use the defaults
   -h, --help           Show this help`
 
@@ -82,7 +80,6 @@ export async function init(argv, io) {
         url: { type: 'string' },
         entrypoint: { type: 'string' },
         'skip-install': { type: 'boolean', default: false },
-        force: { type: 'boolean', default: false },
         yes: { type: 'boolean', short: 'y', default: false },
         help: { type: 'boolean', short: 'h', default: false },
       },
@@ -135,7 +132,6 @@ export async function init(argv, io) {
 
   // Questions first, so nothing is written until all answers are in.
   let platforms, entrypoint, values
-  let replace = false
   try {
     // 1. Platforms
     const choice = positionals[0] ?? (prompter ? await prompter.select('Platforms', ['both', 'ios', 'android'], 'both') : 'both')
@@ -155,17 +151,8 @@ export async function init(argv, io) {
       }
     }
 
-    // Existing shells: replaced only with --force, after asking.
-    const existing = platforms.filter((platform) => existsSync(join(root, platform))).map((platform) => `${platform}/`)
-    if (flags.force && existing.length) {
-      replace =
-        flags.yes ||
-        !prompter ||
-        (await prompter.confirm(`Replace ${existing.join(' and ')}? Everything in ${existing.length > 1 ? 'them' : 'it'} is deleted.`, false))
-    }
-
     // Shell values, only needed when a shell will be written.
-    if (platforms.some((platform) => replace || !existsSync(join(root, platform)))) {
+    if (platforms.some((platform) => !existsSync(join(root, platform)))) {
       const derivedName = nameFromDirectory(basename(root))
       let name = flags.name
       if (name === undefined) {
@@ -250,14 +237,12 @@ export async function init(argv, io) {
   const written = []
   for (const platform of platforms) {
     const target = join(root, platform)
-    if (existsSync(target) && !replace) {
-      warn(`! Skipped ${show(target)}/: it already exists${flags.force ? '' : ' (--force replaces it)'}`)
+    if (existsSync(target)) {
+      warn(`! Skipped ${show(target)}/: it already exists (delete it to create it again)`)
       continue
     }
-    const replaced = existsSync(target)
-    if (replaced) rmSync(target, { recursive: true })
     writeShell(join(TEMPLATES, platform), target, /** @type {NonNullable<typeof values>} */ (values))
-    written.push(`${show(target)}/${replaced ? ' (replaced)' : ''}`)
+    written.push(`${show(target)}/`)
   }
   if (written.length) out(`✓ Created ${written.join(' and ')}`)
 
