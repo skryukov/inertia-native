@@ -188,7 +188,7 @@ export async function init(argv, io) {
   const pkg = readPackageJson(root)
   const packages = [
     { name: PACKAGE, spec: `${PACKAGE}@${RUNTIME_RANGE}`, dev: false },
-    { name: CLI, spec: installSpec(env, cwd), dev: true },
+    { name: CLI, spec: `${CLI}@^${manifest.version}`, dev: true },
   ]
   for (const { name, spec, dev } of packages) {
     if (pkg.data.dependencies?.[name] || pkg.data.devDependencies?.[name]) {
@@ -280,19 +280,4 @@ export async function init(argv, io) {
     for (const line of MANUAL_LINES) warn(`    ${line}`)
     warn('')
   }
-}
-
-/**
- * Which CLI to add as a dev dependency: the one `npx --package <spec>` ran
- * (a tarball or a version), else this version's major from the registry.
- * @param {Record<string, string | undefined>} env
- * @param {string} cwd
- */
-export function installSpec(env, cwd) {
-  const fallback = `${CLI}@^${manifest.version}`
-  const spec = env.npm_config_package
-  if (env.npm_command !== 'exec' || !spec || /[\s,]/.test(spec)) return fallback
-  if (/^@inertia-native\/cli@[\w.^~<>=*-]+$/.test(spec)) return spec
-  if (/\.(tgz|tar\.gz)$/.test(spec)) return /^https?:\/\//.test(spec) ? spec : resolve(cwd, spec.replace(/^file:/, ''))
-  return fallback
 }

@@ -6,7 +6,6 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { main } from '../bin/cli.mjs'
-import { installSpec } from '../bin/init.mjs'
 import { Cancelled } from '../bin/prompt.mjs'
 import { bundleIdFromName, nameFromDirectory } from '../bin/shell.mjs'
 
@@ -379,31 +378,17 @@ describe('package', () => {
     expect(existsSync(join(dir, 'ios'))).toBe(true)
   })
 
-  it('adds the CLI tarball that `npx --package <tarball>` ran it from', async () => {
+  it("doesn't pass npx's npm_config_package on to the installs", async () => {
     const dir = project()
     const installer = fakeInstaller()
-    const env = { npm_command: 'exec', npm_config_package: '../pkg/inertia-native-cli-1.0.0.tgz', PATH: '/bin' }
+    const env = { npm_command: 'exec', npm_config_package: '@inertia-native/cli', PATH: '/bin' }
     await cli(['init', 'ios'], dir, { exec: installer.exec, env })
-    expect(installer.calls[1].args).toEqual(['i', '-D', resolve(tmp, 'pkg/inertia-native-cli-1.0.0.tgz')])
     expect(installer.calls.map((c) => c.env)).toEqual([
       { npm_command: 'exec', PATH: '/bin' },
       { npm_command: 'exec', PATH: '/bin' },
     ])
   })
 
-  it.each([
-    [{}, '@inertia-native/cli@^1.0.0'],
-    [{ npm_command: 'exec', npm_config_package: '' }, '@inertia-native/cli@^1.0.0'],
-    [{ npm_command: 'exec', npm_config_package: '@inertia-native/cli@next' }, '@inertia-native/cli@next'],
-    [{ npm_command: 'exec', npm_config_package: '@inertia-native/cli' }, '@inertia-native/cli@^1.0.0'],
-    [{ npm_command: 'exec', npm_config_package: 'other-cli' }, '@inertia-native/cli@^1.0.0'],
-    [{ npm_command: 'exec', npm_config_package: 'a.tgz\nb.tgz' }, '@inertia-native/cli@^1.0.0'],
-    [{ npm_command: 'exec', npm_config_package: '/abs/inertia-native-cli-1.0.0.tgz' }, '/abs/inertia-native-cli-1.0.0.tgz'],
-    [{ npm_command: 'exec', npm_config_package: 'https://x.dev/i.tgz' }, 'https://x.dev/i.tgz'],
-    [{ npm_command: 'run-script', npm_config_package: '/abs/i.tgz' }, '@inertia-native/cli@^1.0.0'],
-  ])('install spec for %j is %s', (env, spec) => {
-    expect(installSpec(env, '/app')).toBe(spec)
-  })
 })
 
 describe('entrypoint', () => {
