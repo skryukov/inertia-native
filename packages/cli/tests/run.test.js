@@ -52,7 +52,7 @@ function file(path, content = '') {
   return join(tmp, path)
 }
 
-const sim = (name, udid, state = 'Shutdown') => ({ name, udid, state, isAvailable: true })
+const sim = (name, udid, state = 'Shutdown') => ({ name, udid, state })
 
 /** Scripted picker: records each question and answers with `answer(choices)` (default: the default). */
 function fakePrompter(answer = (choices, fallback) => fallback) {
@@ -89,24 +89,13 @@ const sims = (...booted) => {
 describe('iosSimulators', () => {
   it('lists available iOS simulators, newest runtime first', () => {
     expect(sims().map((s) => `${s.udid} ${s.runtime}`)).toEqual(['new-ipad 26.5', 'new-17p 26.5', 'new-17 26.5', 'old-16 18.2', 'old-ipad 18.2'])
-    const unavailable = { devices: { 'com.apple.CoreSimulator.SimRuntime.iOS-26-5': [{ ...sim('iPhone 17', 'x'), isAvailable: false }, sim('iPad', 'y')] } }
-    expect(iosSimulators(unavailable).map((s) => s.udid)).toEqual(['y'])
   })
 })
 
 describe('chooseSimulator', () => {
-  it('takes --device by UDID or by name (booted first, then newest runtime)', async () => {
+  it('takes --device by UDID or by name', async () => {
     expect((await chooseSimulator(sims(), { device: 'old-16' })).udid).toBe('old-16')
     expect((await chooseSimulator(sims(), { device: 'iPad Air' })).udid).toBe('old-ipad')
-    const twice = iosSimulators({
-      devices: {
-        'com.apple.CoreSimulator.SimRuntime.iOS-18-2': [sim('Mine', 'a', 'Booted')],
-        'com.apple.CoreSimulator.SimRuntime.iOS-26-5': [sim('Mine', 'b')],
-      },
-    })
-    expect((await chooseSimulator(twice, { device: 'Mine' })).udid).toBe('a')
-    for (const s of twice) s.state = 'Shutdown'
-    expect((await chooseSimulator(twice, { device: 'Mine' })).udid).toBe('b')
     await expect(chooseSimulator(sims(), { device: 'iPhone 99' })).rejects.toThrow('No simulator "iPhone 99". Simulators: iPad Pro, iPhone 17 Pro, iPhone 17, iPhone 16, iPad Air')
   })
 
@@ -145,31 +134,7 @@ describe('chooseSimulator', () => {
     expect((await chooseSimulator(sims(), {})).udid).toBe('new-17p')
   })
 
-  it('adds the UDID to labels that would be ambiguous', async () => {
-    const same = iosSimulators({
-      devices: {
-        'com.apple.CoreSimulator.SimRuntime.iOS-26-4': [sim('iPhone 17', 'a')],
-        'com.apple.CoreSimulator.SimRuntime.iOS-26-4-1': [sim('iPhone 17', 'b')],
-        'com.apple.CoreSimulator.SimRuntime.iOS-26-0': [sim('iPhone 17', 'c')],
-      },
-    })
-    same[0].runtime = same[1].runtime = '26.4'
-    const prompter = fakePrompter((choices) => choices[1])
-    expect((await chooseSimulator(same, { prompter })).udid).toBe('a')
-    expect(prompter.asked[0].choices).toEqual(['iPhone 17 (iOS 26.4, b)', 'iPhone 17 (iOS 26.4, a)', 'iPhone 17 (iOS 26.0)'])
-  })
 
-  it('tells iPhones by device type, so renamed ones count', async () => {
-    const renamed = iosSimulators({
-      devices: {
-        'com.apple.CoreSimulator.SimRuntime.iOS-26-5': [
-          { ...sim('iPhone-ish iPad', 'ipad'), deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M3' },
-          { ...sim('My phone', 'mine'), deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro' },
-        ],
-      },
-    })
-    expect((await chooseSimulator(renamed, {})).udid).toBe('mine')
-  })
 
   it('fails without any iPhone', async () => {
     const ipads = iosSimulators({ devices: { 'com.apple.CoreSimulator.SimRuntime.iOS-26-5': [sim('iPad', 'y')] } })

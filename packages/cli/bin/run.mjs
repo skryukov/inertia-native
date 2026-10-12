@@ -115,7 +115,7 @@ export async function run(argv, io) {
  */
 async function runIos(root, device, prompter, io, out, warn) {
   const { capture } = io
-  const developer = xcodeDeveloperDir(io)
+  checkXcode(io)
   const sims = iosSimulators(listSimulators(io))
   const sim = await chooseSimulator(sims, { device, prompter })
   prompter?.close()
@@ -124,7 +124,7 @@ async function runIos(root, device, prompter, io, out, warn) {
     const booted = capture('xcrun', ['simctl', 'boot', sim.udid])
     if (!booted.ok) fail(`Couldn't boot ${sim.name}: ${booted.stderr.trim()}`)
   }
-  if (!showSimulator(developer, sim.udid, io)) {
+  if (!showSimulator(sim.udid, io)) {
     warn(`! Couldn't open Simulator, so ${sim.name} has no window. Open Simulator (Device Hub from Xcode 27) to see the app.`)
   }
 
@@ -150,31 +150,20 @@ async function runIos(root, device, prompter, io, out, warn) {
 
 /**
  * Opens the simulator's window: Simulator.app, or Device Hub, which replaces
- * it from Xcode 27 (in <Xcode>/Contents/Applications) and opens devices by
- * URL. The selected Xcode's app first: `open -a` may pick another Xcode's.
- * @param {string} developer the selected Xcode's Contents/Developer
+ * it from Xcode 27 and opens devices by URL.
  * @param {string} udid
  * @param {RunIO} io
  * @returns {boolean} whether one opened
  */
-function showSimulator(developer, udid, io) {
-  const simulator = join(developer, 'Applications', 'Simulator.app')
-  const deviceHub = join(developer, '..', 'Applications', 'DeviceHub.app')
-  const device = ['--args', '-CurrentDeviceUDID', udid]
-  const url = `devices://device/open?id=${udid}`
-  const attempts = existsSync(simulator)
-    ? [[simulator, ...device]]
-    : existsSync(deviceHub)
-      ? [[url]]
-      : [['-a', 'Simulator', ...device], [url]]
-  return attempts.some((args) => io.capture('open', args).ok)
+function showSimulator(udid, { capture }) {
+  return capture('open', ['-a', 'Simulator', '--args', '-CurrentDeviceUDID', udid]).ok || capture('open', [`devices://device/open?id=${udid}`]).ok
 }
 
 /**
- * The selected Xcode's Contents/Developer, after checking it's Xcode.
+ * Fails unless Xcode (not just its Command Line Tools) is selected.
  * @param {RunIO} io
  */
-function xcodeDeveloperDir({ os, capture }) {
+function checkXcode({ os, capture }) {
   if (os !== 'darwin') fail('iOS apps build on macOS only (with Xcode).')
   const selected = capture('xcode-select', ['-p'])
   if (!selected.ok) fail("Xcode isn't installed. Install it from the App Store, open it once, then re-run this.")
@@ -184,7 +173,6 @@ function xcodeDeveloperDir({ os, capture }) {
         '  sudo xcode-select -s /Applications/Xcode.app/Contents/Developer',
     )
   }
-  return selected.stdout.trim()
 }
 
 /**
@@ -461,7 +449,7 @@ export async function chooseAndroidTarget(devices, avds, { device, prompter }) {
 }
 
 /**
- * @typedef {{ devices: Record<string, Array<{ udid: string, name: string, state: string, isAvailable?: boolean, deviceTypeIdentifier?: string }>> }} SimctlList
+ * @typedef {{ devices: Record<string, Array<{ udid: string, name: string, state: string }>> }} SimctlList
  * @typedef {{ udid: string, name: string, state: string, runtime: string, iphone: boolean }} Simulator
  */
 
@@ -477,16 +465,13 @@ export function iosSimulators(list) {
     .filter((r) => r.version)
     .sort((a, b) => compareVersions(/** @type {number[]} */ (b.version), /** @type {number[]} */ (a.version)))
     .flatMap((r) =>
-      r.devices
-        .filter((d) => d.isAvailable !== false)
-        .map(({ udid, name, state, deviceTypeIdentifier }) => ({
-          udid,
-          name,
-          state,
-          runtime: /** @type {number[]} */ (r.version).join('.'),
-          // Simulators can be renamed; the device type says what they are.
-          iphone: deviceTypeIdentifier ? deviceTypeIdentifier.includes('.iPhone') : name.startsWith('iPhone'),
-        })),
+      r.devices.map(({ udid, name, state }) => ({
+        udid,
+        name,
+        state,
+        runtime: /** @type {number[]} */ (r.version).join('.'),
+        iphone: name.startsWith('iPhone'),
+      })),
     )
 }
 
@@ -500,31 +485,21 @@ export function iosSimulators(list) {
  */
 export async function chooseSimulator(sims, { device, prompter }) {
   if (device) {
-    const named = sims.filter((s) => s.name === device)
     return (
-      sims.find((s) => s.udid === device) ??
-      named.find((s) => s.state === 'Booted') ??
-      named[0] ??
+      sims.find((s) => s.udid === device || s.name === device) ??
       fail(`No simulator "${device}". Simulators: ${[...new Set(sims.map((s) => s.name))].join(', ')}`)
     )
   }
   const booted = sims.filter((s) => s.state === 'Booted')
   if (booted.length === 1 || (booted.length && !prompter)) return booted[0]
-  if (booted.length) return pick(/** @type {Prompter} */ (prompter), 'Several simulators are booted. Which one?', booted, simulatorLabel(booted))
+  if (booted.length) return pick(/** @type {Prompter} */ (prompter), 'Several simulators are booted. Which one?', booted, simulatorLabel)
   const iphones = sims.filter((s) => s.iphone)
   if (!iphones.length) fail('No iPhone simulator found. In Xcode: Settings > Components, install an iOS simulator.')
-  return prompter ? pick(prompter, 'Which simulator should start?', iphones, simulatorLabel(iphones)) : iphones[0]
+  return prompter ? pick(prompter, 'Which simulator should start?', iphones, simulatorLabel) : iphones[0]
 }
 
-/**
- * `iPhone 17 (iOS 26.5)`, with the UDID when that's ambiguous.
- * @param {Simulator[]} sims
- */
-function simulatorLabel(sims) {
-  const short = (/** @type {Simulator} */ sim) => `${sim.name} (iOS ${sim.runtime})`
-  return (/** @type {Simulator} */ sim) =>
-    sims.filter((other) => short(other) === short(sim)).length > 1 ? `${sim.name} (iOS ${sim.runtime}, ${sim.udid})` : short(sim)
-}
+/** `iPhone 17 (iOS 26.5)` @param {Simulator} sim */
+const simulatorLabel = (sim) => `${sim.name} (iOS ${sim.runtime})`
 
 /**
  * Asks to pick one of `items`, by label; the first is the default.
