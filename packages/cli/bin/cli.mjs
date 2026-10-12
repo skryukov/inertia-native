@@ -29,11 +29,7 @@ export async function main(argv, overrides = {}) {
     stdin: process.stdin,
     stdout: process.stdout,
     stderr: process.stderr,
-    exec: (cmd, args, { cwd, env, detached }) => {
-      if (!detached) return spawnSync(cmd, args, { cwd, env, stdio: 'inherit', shell: process.platform === 'win32' }).status ?? 1
-      spawn(cmd, args, { cwd, env, detached: true, stdio: 'ignore' }).on('error', () => {}).unref()
-      return 0
-    },
+    exec: (cmd, args, { cwd, env }) => spawnSync(cmd, args, { cwd, env, stdio: 'inherit', shell: process.platform === 'win32' }).status ?? 1,
     capture: (cmd, args) => {
       const result = spawnSync(cmd, args, { encoding: 'utf8' })
       return { ok: result.status === 0, stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? result.error?.message ?? '') }

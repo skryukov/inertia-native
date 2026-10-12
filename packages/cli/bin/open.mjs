@@ -1,7 +1,7 @@
 // `inertia-native open ios|android`: opens a native shell in Xcode or
 // Android Studio.
-import { accessSync, constants, existsSync, statSync } from 'node:fs'
-import { delimiter, join, relative } from 'node:path'
+import { existsSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import { parseArgs } from 'node:util'
 
 import { findProjectRoot, packageManager, runCommand } from './project.mjs'
@@ -64,11 +64,10 @@ export async function open(argv, io) {
     return 1
   }
 
-  const command = ideCommand(platform, target, env, os)
   let status = 0
-  if (!command) {
+  if (os !== 'darwin') {
     out(`Open ${target} in ${ide}.`)
-  } else if (exec(command[0], command[1], { cwd: root, env, detached: os !== 'darwin' }) === 0) {
+  } else if (exec('open', platform === 'ios' ? [target] : ['-a', 'Android Studio', target], { cwd: root, env }) === 0) {
     out(`✓ Opened ${shown} in ${ide}`)
   } else {
     warn(`✗ Couldn't start ${ide}. Open ${target} in it yourself.`)
@@ -83,38 +82,4 @@ export async function open(argv, io) {
     }
   }
   return status
-}
-
-/**
- * The command that opens `target` in its IDE: `open` on macOS, Android
- * Studio's `studio` or `studio.sh` launcher on Linux, else nothing.
- * @param {'ios' | 'android'} platform
- * @param {string} target
- * @param {Record<string, string | undefined>} env
- * @param {NodeJS.Platform} os
- * @returns {[string, string[]] | undefined}
- */
-export function ideCommand(platform, target, env, os) {
-  if (os === 'darwin') return platform === 'ios' ? ['open', [target]] : ['open', ['-a', 'Android Studio', target]]
-  if (os !== 'linux' || platform === 'ios') return undefined
-  const studio = findOnPath(['studio', 'studio.sh'], env.PATH)
-  return studio ? [studio, [target]] : undefined
-}
-
-/**
- * The first of `names` that's an executable file on `path`.
- * @param {string[]} names
- * @param {string | undefined} path
- */
-function findOnPath(names, path = '') {
-  for (const name of names) {
-    for (const dir of path.split(delimiter).filter(Boolean)) {
-      const file = join(dir, name)
-      try {
-        accessSync(file, constants.X_OK)
-        if (statSync(file).isFile()) return file
-      } catch {}
-    }
-  }
-  return undefined
 }
