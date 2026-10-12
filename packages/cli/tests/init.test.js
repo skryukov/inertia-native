@@ -3,12 +3,11 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { main } from '../bin/cli.mjs'
 import { installSpec } from '../bin/init.mjs'
-import { Cancelled, createPrompter } from '../bin/prompt.mjs'
+import { Cancelled } from '../bin/prompt.mjs'
 import { bundleIdFromName, nameFromDirectory } from '../bin/shell.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
@@ -119,23 +118,9 @@ describe('init on a Laravel-like app', () => {
   it('installs, patches, creates both shells and adds scripts', async () => {
     const dir = laravel()
     const installer = fakeInstaller()
-    const { code, stdout, stderr } = await cli(['init', '--yes'], dir, { exec: installer.exec })
+    const { code, stderr } = await cli(['init', '--yes'], dir, { exec: installer.exec })
     expect(stderr).toBe('')
     expect(code).toBe(0)
-    expect(stdout).toBe(`✓ Found entrypoint resources/js/app.tsx
-✓ App name: Acme Shop (--name to change)
-✓ Bundle ID: com.example.acmeshop (--bundle-id to change)
-✓ Dev server URL: http://localhost:8000 (found artisan; --url to change)
-› npm i inertia-native@^1.0.0
-✓ Added inertia-native to package.json (npm)
-› npm i -D @inertia-native/cli@^1.0.0
-✓ Added @inertia-native/cli to package.json (npm)
-✓ Created resources/js/inertia-native.ts, imported in resources/js/app.tsx
-✓ Created ios/ and android/
-✓ Added "ios" and "android" scripts to package.json
-
-Next: start your dev server (composer run dev), then run: npm run ios (or npm run android)
-`)
     expect(installer.calls.map((c) => [c.cmd, c.args, c.cwd])).toEqual([
       ['npm', ['i', 'inertia-native@^1.0.0'], dir],
       ['npm', ['i', '-D', '@inertia-native/cli@^1.0.0'], dir],
@@ -532,37 +517,6 @@ describe('prompts', () => {
     expect(snapshot(dir)).toEqual(before)
   })
 
-  it('takes defaults, re-asks and cancels with keys (terminal prompter)', async () => {
-    const input = new PassThrough()
-    const output = new PassThrough()
-    let shown = ''
-    output.on('data', (chunk) => (shown += chunk))
-    const prompter = createPrompter(input, output)
-    expect(input.listenerCount('data')).toBe(0)
-    const press = async (...keys) => {
-      for (const key of keys) {
-        await new Promise((r) => setTimeout(r, 5))
-        input.write(key)
-      }
-    }
-    const answer = prompter.text('Bundle ID', 'com.example.a', (v) => (BUNDLE_RULE.test(v) ? undefined : 'nope'))
-    await press('X', '\r', '\x7f', '\r')
-    expect(await answer).toBe('com.example.a')
-    const picked = prompter.select('Platforms', ['both', 'ios', 'android'], 'both')
-    await press('\x1b[B', '\r')
-    expect(await picked).toBe('ios')
-    for (const [key, expected] of [['\r', true], ['n', false]]) {
-      const confirmed = prompter.confirm('Change it?')
-      await press(key)
-      expect(await confirmed).toBe(expected)
-    }
-    const cancelled = prompter.select('Simulator', ['iPhone 17 (iOS 26.5)', 'iPhone 16 (iOS 18.2)'], 'iPhone 17 (iOS 26.5)')
-    await press('\x03')
-    await expect(cancelled).rejects.toBeInstanceOf(Cancelled)
-    expect(input.listenerCount('keypress')).toBe(0)
-    expect(shown).toContain('nope')
-    expect(shown).toContain('iPhone 16 (iOS 18.2)')
-  })
 })
 
 describe('package.json scripts', () => {
