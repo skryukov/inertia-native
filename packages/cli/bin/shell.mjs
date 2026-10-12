@@ -36,25 +36,16 @@ export function invalid(flag, value) {
 }
 
 /**
- * `acme-shop` -> `Acme Shop`. Splits on anything but ASCII letters and digits
- * (accents are dropped first), capitalises each word and keeps whole words
- * up to the 30-character limit. Returns '' if nothing usable is left.
+ * `acme-shop` -> `Acme Shop`: splits on anything but ASCII letters and digits
+ * and capitalises each word. Returns '' if nothing is left.
  * @param {string} dir
  */
 export function nameFromDirectory(dir) {
-  const words = dir
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
+  return dir
     .split(/[^A-Za-z0-9]+/)
     .filter(Boolean)
     .map((word) => word[0].toUpperCase() + word.slice(1))
-  let name = ''
-  for (const word of words) {
-    const next = name ? `${name} ${word}` : word
-    if (next.length > 30) return name || word.slice(0, 30)
-    name = next
-  }
-  return name
+    .join(' ')
 }
 
 /**

@@ -195,7 +195,6 @@ describe('name derivation', () => {
     ['my_app', 'My App', 'com.example.myapp'],
     ['acme.shop  v2', 'Acme Shop V2', 'com.example.acmeshopv2'],
     ['inertiaRails', 'InertiaRails', 'com.example.inertiarails'],
-    ['café-crème', 'Cafe Creme', 'com.example.cafecreme'],
     ['3d-printer', '3d Printer', 'com.example.app3dprinter'],
     ['2024', '2024', 'com.example.app2024'],
     ['-leading-dash-', 'Leading Dash', 'com.example.leadingdash'],
@@ -206,25 +205,15 @@ describe('name derivation', () => {
     expect(bundleId).toMatch(BUNDLE_RULE)
   })
 
-  it('keeps whole words up to 30 characters', () => {
-    const name = nameFromDirectory('the-quite-long-name-of-a-laravel-application')
-    expect(name).toBe('The Quite Long Name Of A')
-    expect(name).toMatch(NAME_RULE)
-  })
 
-  it('cuts a single long word at 30 characters', () => {
-    const name = nameFromDirectory('supercalifragilisticexpialidocious')
-    expect(name).toBe('Supercalifragilisticexpialidoc')
-    expect(name).toMatch(NAME_RULE)
-  })
 
   it('gives up when nothing usable is left', () => {
     expect(nameFromDirectory('アプリ')).toBe('')
     expect(nameFromDirectory('___')).toBe('')
   })
 
-  it('asks for --name when the directory name gives nothing, changing nothing', async () => {
-    const dir = project('アプリ')
+  it.each(['アプリ', 'the-quite-long-name-of-a-laravel-application'])('asks for --name when %s gives no valid name, changing nothing', async (name) => {
+    const dir = project(name)
     const { code, stderr } = await cli(['init', '--yes'], dir)
     expect(code).toBe(1)
     expect(stderr).toContain('Pass --name')

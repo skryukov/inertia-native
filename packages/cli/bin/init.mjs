@@ -157,7 +157,7 @@ export async function init(argv, io) {
       let name = flags.name
       if (name === undefined) {
         if (prompter) name = await prompter.text('App name', derivedName, (v) => invalid('name', v))
-        else if (derivedName) name = report('App name', derivedName, '--name to change')
+        else if (!invalid('name', derivedName)) name = report('App name', derivedName, '--name to change')
         else {
           return abort([
             `Can't make an app name from the directory name ${JSON.stringify(basename(root))}. Pass --name: ${RULES.name.allowed}.`,
