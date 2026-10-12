@@ -12,8 +12,6 @@ import {
   chooseSimulator,
   findAndroidSdk,
   findJdk,
-  formatAndroidTargets,
-  formatSimulators,
   iosSimulators,
   parseAdbDevices,
   reversePorts,
@@ -120,7 +118,7 @@ describe('chooseSimulator', () => {
     expect((await chooseSimulator(twice, { device: 'Mine' })).udid).toBe('a')
     for (const s of twice) s.state = 'Shutdown'
     expect((await chooseSimulator(twice, { device: 'Mine' })).udid).toBe('b')
-    await expect(chooseSimulator(sims(), { device: 'iPhone 99' })).rejects.toThrow('No simulator "iPhone 99". List them with: npx inertia-native run ios --list')
+    await expect(chooseSimulator(sims(), { device: 'iPhone 99' })).rejects.toThrow('No simulator "iPhone 99". Simulators: iPad Pro, iPhone 17 Pro, iPhone 17, iPhone 16, iPad Air')
   })
 
   it('uses the one booted simulator, iPad or not, without asking', async () => {
@@ -138,12 +136,8 @@ describe('chooseSimulator', () => {
     ])
   })
 
-  it('fails with the list and the --device hint for several booted without a terminal', async () => {
-    await expect(chooseSimulator(sims('old-16', 'new-17'), {})).rejects.toThrow(
-      'Several simulators are booted. Pick one with --device <name or UDID>:\n' +
-        '    iPhone 17  iOS 26.5  new-17\n' +
-        '    iPhone 16  iOS 18.2  old-16',
-    )
+  it('takes the newest of several booted without a terminal', async () => {
+    expect((await chooseSimulator(sims('old-16', 'new-17'), {})).udid).toBe('new-17')
   })
 
   it('asks which iPhone to start in a terminal when none is booted, newest first', async () => {
@@ -194,17 +188,6 @@ describe('chooseSimulator', () => {
   })
 })
 
-it('lists simulators for --list', () => {
-  expect(formatSimulators(sims('new-17'))).toBe(`Booted simulators (--device <name or UDID>):
-    iPhone 17  iOS 26.5  new-17
-Available simulators:
-    iPad Pro       iOS 26.5  new-ipad
-    iPhone 17 Pro  iOS 26.5  new-17p
-    iPhone 16      iOS 18.2  old-16
-    iPad Air       iOS 18.2  old-ipad`)
-  expect(formatSimulators([])).toBe('Booted simulators (--device <name or UDID>):\n    none\nAvailable simulators:\n    none')
-})
-
 it('parses adb devices, with models from adb devices -l', () => {
   const text = 'List of devices attached\nemulator-5554\tdevice\nR58M\tunauthorized\nemulator-5556\toffline\n\n'
   expect(parseAdbDevices(text)).toEqual([
@@ -243,10 +226,8 @@ describe('chooseAndroidTarget', () => {
     ])
   })
 
-  it('fails with the list and the --device hint for several devices without a terminal', async () => {
-    await expect(chooseAndroidTarget([emu('emulator-5554', 'pixel'), phone], noAvds, {})).rejects.toThrow(
-      'Several devices are connected. Pick one with --device <serial>:\n    emulator-5554  pixel\n    1A2B3C         Pixel 7',
-    )
+  it('takes the first of several devices without a terminal', async () => {
+    expect(await chooseAndroidTarget([emu('emulator-5554', 'pixel'), phone], noAvds, {})).toEqual({ serial: 'emulator-5554' })
   })
 
   it('starts the only AVD when nothing is connected, without asking', async () => {
@@ -262,10 +243,8 @@ describe('chooseAndroidTarget', () => {
     expect(prompter.asked).toEqual([{ label: 'No device is connected. Which emulator should start?', choices: ['pixel', 'tablet'], fallback: 'pixel' }])
   })
 
-  it('fails with the AVDs and the --avd hint without a terminal', async () => {
-    await expect(chooseAndroidTarget([], () => ['pixel', 'tablet'], {})).rejects.toThrow(
-      'No device is connected. Pick an emulator to start with --avd <name>:\n    pixel\n    tablet',
-    )
+  it('starts the first AVD without a terminal', async () => {
+    expect(await chooseAndroidTarget([], () => ['pixel', 'tablet'], {})).toEqual({ avd: 'pixel' })
   })
 
   it('fails when there is nothing to run on', async () => {
@@ -280,23 +259,6 @@ describe('chooseAndroidTarget', () => {
     await expect(chooseAndroidTarget(devices, noAvds, { device: 'R58M' })).rejects.toThrow('No device R58M connected. Connected: emulator-5554, 1A2B3C')
   })
 
-  it('takes --avd: its serial when running, else starts it', async () => {
-    const devices = [emu('emulator-5554', 'pixel'), emu('emulator-5556', 'tablet')]
-    expect(await chooseAndroidTarget(devices, noAvds, { avd: 'tablet' })).toEqual({ serial: 'emulator-5556' })
-    expect(await chooseAndroidTarget(devices, () => ['pixel', 'tablet', 'tv'], { avd: 'tv' })).toEqual({ avd: 'tv' })
-    await expect(chooseAndroidTarget(devices, () => ['pixel', 'tablet'], { avd: 'watch' })).rejects.toThrow('No emulator "watch". Emulators: pixel, tablet')
-  })
-})
-
-it('lists devices and emulators for --list', () => {
-  const devices = [{ serial: 'emulator-5554', state: 'device', avd: 'pixel' }, { serial: 'R58M', state: 'unauthorized' }]
-  expect(formatAndroidTargets(devices, ['pixel', 'tablet'])).toBe(`Connected devices (--device <serial>):
-    emulator-5554  pixel
-    R58M           unauthorized
-Emulators (--avd <name>):
-    pixel   running as emulator-5554
-    tablet`)
-  expect(formatAndroidTargets([], [])).toBe('Connected devices (--device <serial>):\n    none\nEmulators (--avd <name>):\n    none')
 })
 
 it('reads the URL baked into generated shells', async () => {
@@ -409,8 +371,7 @@ describe('run errors', () => {
   it('prints help', async () => {
     const { code, stdout } = await cli(['run', '--help'])
     expect(code).toBe(0)
-    expect(stdout).toContain('--avd <name>')
-    expect(stdout).toContain('--list')
+    expect(stdout).toContain('--device <name>')
   })
 })
 

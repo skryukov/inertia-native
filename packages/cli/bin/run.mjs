@@ -16,15 +16,12 @@ device and launches it. Start your dev server first.
 On Android it runs \`adb reverse\` for the dev server's port (and Vite's), so
 the device reaches localhost on this machine.
 
-It uses the simulator or device that's running. If several are, it asks
-which one in a terminal, and stops with the list elsewhere. If none is, it
-asks which one to start; outside a terminal iOS starts the newest iPhone,
-and Android its only emulator.
+It uses the simulator or device that's running, or starts one: the newest
+iPhone, or an Android emulator. When there's a choice, it asks in a
+terminal and takes the first one elsewhere.
 
 Options:
   --device <name>   iOS: simulator name or UDID. Android: serial from \`adb devices\`
-  --avd <name>      Android: emulator (AVD) to use, started if needed
-  --list            List the simulators, or the devices and emulators, and exit
   -h, --help        Show this help`
 
 const exe = (/** @type {string} */ name, /** @type {NodeJS.Platform} */ os) => (os === 'win32' ? `${name}.exe` : name)
@@ -53,7 +50,7 @@ const fail = (message) => {
  * @returns {Promise<number>}
  */
 export async function run(argv, io) {
-  const { cwd, env } = io
+  const { cwd } = io
   const out = (/** @type {string} */ line) => io.stdout.write(`${line}\n`)
   const warn = (/** @type {string} */ line) => io.stderr.write(`${line}\n`)
 
@@ -64,8 +61,6 @@ export async function run(argv, io) {
       allowPositionals: true,
       options: {
         device: { type: 'string' },
-        avd: { type: 'string' },
-        list: { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
       },
     })
@@ -88,17 +83,6 @@ export async function run(argv, io) {
   // Asks only in a terminal, and closes before any build takes the terminal over.
   const prompter = io.prompter ?? (io.stdin.isTTY ? createPrompter(io.stdin, /** @type {NodeJS.WritableStream} */ (io.stdout)) : undefined)
   try {
-    if (flags.list) {
-      if (platform === 'ios') {
-        xcodeDeveloperDir(io)
-        out(formatSimulators(iosSimulators(listSimulators(io))))
-      } else {
-        const { adb, emulator } = androidTools(findProjectRoot(cwd) ?? cwd, env, io.os)
-        out(formatAndroidTargets(androidDevices(adb, io), listAvds(emulator, io)))
-      }
-      return 0
-    }
-
     const root = findProjectRoot(cwd) ?? fail(`No package.json in ${cwd} or any parent directory. Run this from your app's root.`)
     const marker = platform === 'ios' ? join(root, 'ios', 'App.xcodeproj') : join(root, 'android', 'gradlew')
     if (!existsSync(marker)) fail(`No ${platform}/ shell in ${root}. Create it with: npx inertia-native init ${platform}`)
@@ -110,7 +94,7 @@ export async function run(argv, io) {
     }
 
     if (platform === 'ios') await runIos(root, flags.device, prompter, io, out, warn)
-    else await runAndroid(root, flags, url, prompter, io, out, warn)
+    else await runAndroid(root, flags.device, url, prompter, io, out, warn)
     return 0
   } catch (error) {
     if (!(error instanceof Failure)) throw error
@@ -233,14 +217,14 @@ function androidTools(root, env, os) {
 
 /**
  * @param {string} root
- * @param {{ device?: string, avd?: string }} flags
+ * @param {string | undefined} device
  * @param {string | undefined} url
  * @param {Prompter | undefined} prompter
  * @param {RunIO} io
  * @param {(line: string) => void} out
  * @param {(line: string) => void} warn
  */
-async function runAndroid(root, flags, url, prompter, io, out, warn) {
+async function runAndroid(root, device, url, prompter, io, out, warn) {
   const { env, os, capture } = io
   const { sdk, adb, emulator } = androidTools(root, env, os)
   const jdk =
@@ -255,7 +239,7 @@ async function runAndroid(root, flags, url, prompter, io, out, warn) {
   const android = join(root, 'android')
   const gradlew = os === 'win32' ? 'gradlew.bat' : './gradlew'
 
-  const target = await chooseAndroidTarget(androidDevices(adb, io), () => listAvds(emulator, io), { ...flags, prompter })
+  const target = await chooseAndroidTarget(androidDevices(adb, io), () => listAvds(emulator, io), { device, prompter })
   prompter?.close()
   /** @type {string | undefined} */
   let serial
@@ -452,57 +436,29 @@ function listAvds(emulator, io) {
 }
 
 /**
- * What to run on: a connected device, else an emulator to start. A single
- * candidate is taken; several are asked about in a terminal, otherwise it
- * fails with the list and the flag to pick one.
+ * What to run on: a connected device, else an emulator to start. Several
+ * are asked about in a terminal; elsewhere the first is taken.
  * @param {AndroidDevice[]} devices
  * @param {() => string[]} avds AVD names, read only when needed
- * @param {{ device?: string, avd?: string, prompter?: Prompter }} options
+ * @param {{ device?: string, prompter?: Prompter }} options
  * @returns {Promise<{ serial: string } | { avd: string }>}
  */
-export async function chooseAndroidTarget(devices, avds, { device, avd, prompter }) {
+export async function chooseAndroidTarget(devices, avds, { device, prompter }) {
   const ready = devices.filter((d) => d.state === 'device')
   if (device) {
     if (ready.some((d) => d.serial === device)) return { serial: device }
     return fail(`No device ${device} connected. Connected: ${ready.map((d) => d.serial).join(', ') || 'none'}`)
   }
-  if (avd) {
-    const running = ready.find((d) => d.avd === avd)
-    if (running) return { serial: running.serial }
-    const names = avds()
-    if (!names.includes(avd)) fail(`No emulator "${avd}". Emulators: ${names.join(', ') || 'none'}`)
-    return { avd }
-  }
-
-  if (ready.length === 1) return { serial: ready[0].serial }
-  if (ready.length > 1) {
-    if (!prompter) fail(`Several devices are connected. Pick one with --device <serial>:\n${table(ready.map(deviceRow))}`)
-    return { serial: (await pick(prompter, 'Several devices are connected. Which one?', ready, (d) => deviceRow(d).join('  '))).serial }
+  if (ready.length === 1 || (ready.length && !prompter)) return { serial: ready[0].serial }
+  if (ready.length) {
+    const label = (/** @type {AndroidDevice} */ d) => [d.serial, d.avd ?? d.model].filter(Boolean).join('  ')
+    return { serial: (await pick(/** @type {Prompter} */ (prompter), 'Several devices are connected. Which one?', ready, label)).serial }
   }
 
   const names = avds()
   if (!names.length) fail('No device is connected and no emulator to start. In Android Studio: Device Manager > Create Virtual Device.')
-  if (names.length === 1) return { avd: names[0] }
-  if (!prompter) fail(`No device is connected. Pick an emulator to start with --avd <name>:\n${table(names.map((name) => [name]))}`)
+  if (names.length === 1 || !prompter) return { avd: names[0] }
   return { avd: await prompter.select('No device is connected. Which emulator should start?', names, names[0]) }
-}
-
-/** @param {AndroidDevice} device */
-const deviceRow = (device) => [device.serial, device.state === 'device' ? (device.avd ?? device.model ?? '') : device.state]
-
-/**
- * `--list` for Android.
- * @param {AndroidDevice[]} devices
- * @param {string[]} avds
- */
-export function formatAndroidTargets(devices, avds) {
-  const running = (/** @type {string} */ avd) => devices.find((d) => d.avd === avd)?.serial
-  return [
-    'Connected devices (--device <serial>):',
-    devices.length ? table(devices.map(deviceRow)) : '    none',
-    'Emulators (--avd <name>):',
-    avds.length ? table(avds.map((avd) => [avd, running(avd) ? `running as ${running(avd)}` : ''])) : '    none',
-  ].join('\n')
 }
 
 /**
@@ -536,10 +492,9 @@ export function iosSimulators(list) {
 }
 
 /**
- * The simulator to use: `device` (name or UDID), else the booted one. Several
- * booted are asked about in a terminal, otherwise it fails with the list.
- * None booted: it asks which iPhone to start in a terminal, otherwise takes
- * the newest.
+ * The simulator to use: `device` (name or UDID), else the booted one, else an
+ * iPhone to start. Several are asked about in a terminal; elsewhere the
+ * first (newest) is taken.
  * @param {Simulator[]} sims from iosSimulators
  * @param {{ device?: string, prompter?: Prompter }} options
  * @returns {Promise<Simulator>}
@@ -551,22 +506,16 @@ export async function chooseSimulator(sims, { device, prompter }) {
       sims.find((s) => s.udid === device) ??
       named.find((s) => s.state === 'Booted') ??
       named[0] ??
-      fail(`No simulator "${device}". List them with: npx inertia-native run ios --list`)
+      fail(`No simulator "${device}". Simulators: ${[...new Set(sims.map((s) => s.name))].join(', ')}`)
     )
   }
   const booted = sims.filter((s) => s.state === 'Booted')
-  if (booted.length === 1) return booted[0]
-  if (booted.length > 1) {
-    if (!prompter) fail(`Several simulators are booted. Pick one with --device <name or UDID>:\n${table(booted.map(simulatorRow))}`)
-    return pick(prompter, 'Several simulators are booted. Which one?', booted, simulatorLabel(booted))
-  }
+  if (booted.length === 1 || (booted.length && !prompter)) return booted[0]
+  if (booted.length) return pick(/** @type {Prompter} */ (prompter), 'Several simulators are booted. Which one?', booted, simulatorLabel(booted))
   const iphones = sims.filter((s) => s.iphone)
   if (!iphones.length) fail('No iPhone simulator found. In Xcode: Settings > Components, install an iOS simulator.')
   return prompter ? pick(prompter, 'Which simulator should start?', iphones, simulatorLabel(iphones)) : iphones[0]
 }
-
-/** @param {Simulator} sim */
-const simulatorRow = (sim) => [sim.name, `iOS ${sim.runtime}`, sim.udid]
 
 /**
  * `iPhone 17 (iOS 26.5)`, with the UDID when that's ambiguous.
@@ -576,21 +525,6 @@ function simulatorLabel(sims) {
   const short = (/** @type {Simulator} */ sim) => `${sim.name} (iOS ${sim.runtime})`
   return (/** @type {Simulator} */ sim) =>
     sims.filter((other) => short(other) === short(sim)).length > 1 ? `${sim.name} (iOS ${sim.runtime}, ${sim.udid})` : short(sim)
-}
-
-/**
- * `--list` for iOS.
- * @param {Simulator[]} sims from iosSimulators
- */
-export function formatSimulators(sims) {
-  const booted = sims.filter((s) => s.state === 'Booted')
-  const others = sims.filter((s) => s.state !== 'Booted')
-  return [
-    'Booted simulators (--device <name or UDID>):',
-    booted.length ? table(booted.map(simulatorRow)) : '    none',
-    'Available simulators:',
-    others.length ? table(others.map(simulatorRow)) : '    none',
-  ].join('\n')
 }
 
 /**
@@ -605,15 +539,6 @@ export function formatSimulators(sims) {
 async function pick(prompter, question, items, label) {
   const labels = items.map(label)
   return items[labels.indexOf(await prompter.select(question, labels, labels[0]))]
-}
-
-/**
- * Rows as indented, aligned columns.
- * @param {string[][]} rows
- */
-function table(rows) {
-  const widths = rows[0].map((_, i) => Math.max(...rows.map((row) => row[i].length)))
-  return rows.map((row) => `    ${row.map((cell, i) => cell.padEnd(widths[i])).join('  ')}`.trimEnd()).join('\n')
 }
 
 /** @param {number[]} a @param {number[]} b */
