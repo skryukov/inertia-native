@@ -200,13 +200,12 @@ function listSimulators({ capture }) {
 
 /**
  * The Android SDK's adb and emulator.
- * @param {string} root
  * @param {Record<string, string | undefined>} env
  * @param {NodeJS.Platform} os
  */
-function androidTools(root, env, os) {
+function androidTools(env, os) {
   const sdk =
-    findAndroidSdk(env, root, homedir(), os) ??
+    findAndroidSdk(env, homedir(), os) ??
     fail('Android SDK not found. Install Android Studio and open it once (it downloads the SDK), or set ANDROID_HOME to your SDK.')
   const adb = join(sdk, 'platform-tools', exe('adb', os))
   if (!existsSync(adb)) {
@@ -226,7 +225,7 @@ function androidTools(root, env, os) {
  */
 async function runAndroid(root, device, url, prompter, io, out, warn) {
   const { env, os, capture } = io
-  const { sdk, adb, emulator } = androidTools(root, env, os)
+  const { sdk, adb, emulator } = androidTools(env, os)
   const jdk =
     findJdk(env, io) ??
     fail('No Java found (Gradle needs JDK 17 or newer). Android Studio bundles one; or install a JDK (brew install openjdk@21) and set JAVA_HOME.')
@@ -573,35 +572,23 @@ async function responds(url) {
 }
 
 /**
- * The Android SDK: ANDROID_HOME, ANDROID_SDK_ROOT, android/local.properties,
- * then where Android Studio puts it.
+ * The Android SDK: ANDROID_HOME, else where Android Studio puts it.
  * @param {Record<string, string | undefined>} env
- * @param {string} root
  * @param {string} [home]
  * @param {NodeJS.Platform} [os]
  */
-export function findAndroidSdk(env, root, home = homedir(), os = process.platform) {
-  const properties = join(root, 'android', 'local.properties')
-  const fromProperties = existsSync(properties)
-    ? readFileSync(properties, 'utf8')
-        .match(/^sdk\.dir\s*=\s*(.+)$/m)?.[1]
-        .trim()
-        .replace(/\\(.)/g, '$1')
-    : undefined
-  const candidates = [
-    env.ANDROID_HOME,
-    env.ANDROID_SDK_ROOT,
-    fromProperties,
-    os === 'darwin' ? join(home, 'Library', 'Android', 'sdk') : undefined,
-    os === 'linux' ? join(home, 'Android', 'Sdk') : undefined,
-    os === 'win32' && env.LOCALAPPDATA ? join(env.LOCALAPPDATA, 'Android', 'Sdk') : undefined,
-  ]
-  return candidates.find((dir) => dir && existsSync(dir) && statSync(dir).isDirectory())
+export function findAndroidSdk(env, home = homedir(), os = process.platform) {
+  const fallback = {
+    darwin: join(home, 'Library', 'Android', 'sdk'),
+    linux: join(home, 'Android', 'Sdk'),
+    win32: env.LOCALAPPDATA && join(env.LOCALAPPDATA, 'Android', 'Sdk'),
+  }[/** @type {'darwin' | 'linux' | 'win32'} */ (os)]
+  return [env.ANDROID_HOME, fallback].find((dir) => dir && existsSync(dir) && statSync(dir).isDirectory())
 }
 
 /**
- * A JDK for Gradle: JAVA_HOME, macOS's java_home, Android Studio's bundled
- * JDK, Homebrew's openjdk, then `java` on PATH.
+ * A JDK for Gradle: JAVA_HOME, Android Studio's bundled one, else `java` on
+ * PATH.
  * @param {Record<string, string | undefined>} env
  * @param {RunIO} io
  * @returns {{ home?: string } | undefined}
@@ -609,23 +596,11 @@ export function findAndroidSdk(env, root, home = homedir(), os = process.platfor
 export function findJdk(env, { os, capture }) {
   const java = (/** @type {string} */ home) => existsSync(join(home, 'bin', exe('java', os)))
   if (env.JAVA_HOME && java(env.JAVA_HOME)) return { home: env.JAVA_HOME }
-  if (os === 'darwin') {
-    const found = capture('/usr/libexec/java_home', ['-v', '17+'])
-    if (found.ok && found.stdout.trim()) return { home: found.stdout.trim() }
-  }
-  const home = homedir()
-  const candidates = {
-    darwin: [
-      '/Applications/Android Studio.app/Contents/jbr/Contents/Home',
-      join(home, 'Applications', 'Android Studio.app', 'Contents', 'jbr', 'Contents', 'Home'),
-      ...['/opt/homebrew/opt', '/usr/local/opt'].flatMap((prefix) =>
-        ['openjdk@21', 'openjdk', 'openjdk@17'].map((jdk) => `${prefix}/${jdk}/libexec/openjdk.jdk/Contents/Home`),
-      ),
-    ],
-    linux: ['/opt/android-studio/jbr', join(home, 'android-studio', 'jbr'), '/snap/android-studio/current/jbr'],
-    win32: ['C:\\Program Files\\Android\\Android Studio\\jbr'],
+  const studio = {
+    darwin: '/Applications/Android Studio.app/Contents/jbr/Contents/Home',
+    linux: '/opt/android-studio/jbr',
+    win32: 'C:\\Program Files\\Android\\Android Studio\\jbr',
   }[/** @type {'darwin' | 'linux' | 'win32'} */ (os)]
-  const bundled = candidates?.find(java)
-  if (bundled) return { home: bundled }
+  if (studio && java(studio)) return { home: studio }
   return capture('java', ['-version']).ok ? {} : undefined
 }

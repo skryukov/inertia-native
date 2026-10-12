@@ -320,26 +320,14 @@ describe('reversePorts', () => {
 })
 
 describe('findAndroidSdk', () => {
-  const dir = (...path) => {
-    const full = join(tmp, ...path)
-    mkdirSync(full, { recursive: true })
-    return full
-  }
-
-  it('prefers ANDROID_HOME, then ANDROID_SDK_ROOT, then local.properties, then the default location', () => {
-    const home = dir('home')
-    const fallback = dir('home', 'Library', 'Android', 'sdk')
-    const fromProperties = dir('props sdk')
-    dir('android')
-    writeFileSync(join(tmp, 'android', 'local.properties'), `sdk.dir=${fromProperties.replaceAll(':', '\\:')}\n`)
-    const a = dir('a')
-    const b = dir('b')
-    expect(findAndroidSdk({ ANDROID_HOME: a, ANDROID_SDK_ROOT: b }, tmp, home, 'darwin')).toBe(a)
-    expect(findAndroidSdk({ ANDROID_HOME: join(tmp, 'missing'), ANDROID_SDK_ROOT: b }, tmp, home, 'darwin')).toBe(b)
-    expect(findAndroidSdk({}, tmp, home, 'darwin')).toBe(fromProperties)
-    rmSync(join(tmp, 'android'), { recursive: true })
-    expect(findAndroidSdk({}, tmp, home, 'darwin')).toBe(fallback)
-    expect(findAndroidSdk({}, tmp, home, 'linux')).toBeUndefined()
+  it('prefers ANDROID_HOME, then the default location', () => {
+    const home = join(tmp, 'home')
+    const fallback = join(home, 'Library', 'Android', 'sdk')
+    const sdk = join(tmp, 'sdk')
+    for (const dir of [fallback, sdk]) mkdirSync(dir, { recursive: true })
+    expect(findAndroidSdk({ ANDROID_HOME: sdk }, home, 'darwin')).toBe(sdk)
+    expect(findAndroidSdk({ ANDROID_HOME: join(tmp, 'missing') }, home, 'darwin')).toBe(fallback)
+    expect(findAndroidSdk({}, home, 'linux')).toBeUndefined()
   })
 })
 
