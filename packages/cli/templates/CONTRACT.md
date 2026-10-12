@@ -62,3 +62,14 @@ license (full text) goes in the template's `THIRD_PARTY_NOTICES`, which
 Gradle runs on whatever JDK `JAVA_HOME` (or Android Studio) points at, 17 or
 newer. The template pins no daemon JVM (`gradle-daemon-jvm.properties`) and
 applies no toolchain resolver, so Gradle never downloads a JDK.
+
+## Versions
+
+Nothing bumps the templates automatically. Before publishing the CLI, update
+Hotwire Native, AGP and Gradle in both templates to their latest releases:
+
+- iOS: in Xcode, File > Packages > Update to Latest Package Versions.
+- Android: `gradle/libs.versions.toml`, and `gradle-wrapper.properties` with
+  its `distributionSha256Sum`.
+
+The Native workflow builds both apps on every template change.
